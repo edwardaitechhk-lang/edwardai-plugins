@@ -1,0 +1,12 @@
+{
+  "name": "edwardai",
+  "owner": { "name": "EdwardAI" },
+  "description": "EdwardAI 集合：課程學生用的 Claude Code 工具包，一個 marketplace 陸續加入",
+  "plugins": [
+    {
+      "name": "work-mode",
+      "source": "./plugins/work-mode",
+      "description": "工作模式三件套：/work-mode:auto（少問多做）、/work-mode:out（派工收貨）、/work-mode:wrap（收尾）"
+    }
+  ]
+}

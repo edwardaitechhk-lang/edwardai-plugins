@@ -1,0 +1,6 @@
+{
+  "name": "work-mode",
+  "version": "1.0.0",
+  "description": "工作模式三件套：auto（可還原的步驟不停下來問，對外動作留到最後一次批准）、out（批量工作派給 subagent／外部 CLI，主線只規劃和收貨）、wrap（不開新支線，做完、驗證、落地、出收尾單）",
+  "author": { "name": "EdwardAI" }
+}
