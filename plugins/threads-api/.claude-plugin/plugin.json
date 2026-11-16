@@ -1,0 +1,8 @@
+{
+  "name": "threads-api",
+  "version": "1.0.0",
+  "description": "Threads 圖解實作：自己的帳號設定、預覽、純文字試發、發布讀回與防重送",
+  "author": {
+    "name": "EdwardAI"
+  }
+}

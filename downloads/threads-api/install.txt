@@ -1,0 +1,13 @@
+# EdwardAI Threads 實作助手：安裝說明
+請由具備本機檔案操作能力的 AI 助手執行。安裝不會接通帳號或發布貼文。
+1. 從同一網站下載 edwardai-threads.zip，解壓至暫存目錄。
+2. 通讀 SKILL.md、scripts/threads.py 和 install.py；包內沒有帳號或憑證。
+3. 確認使用者用 Codex 還是 Claude Code。用 Python 3.9+ 執行解壓後的 install.py --target codex 或 --target claude。
+4. 安裝器只寫入 edwardai-threads 這個 skill；已有同名目錄先備份，不更改其他技能及設定。
+5. 開新 AI 對話，用 /edwardai-threads。先從使用者已完成的位置接續，不重做已驗收步驟。
+6. 憑證以本機隱藏輸入保存，不要求貼到聊天；先 me 核對身份，preview 之後等用戶批准才 publish。
+7. Windows 的 python 指令可能是 py -3；若 Python 未安裝，先從 https://www.python.org/downloads/ 安裝。Windows 真機尚待學生實測。
+
+檔案：skill/SKILL.md、skill/scripts/threads.py、install.py。
+下載：https://edwardai-packs.edwardai-tech-hk.workers.dev/threads-api/edwardai-threads.zip
+圖解：https://edwardai-packs.edwardai-tech-hk.workers.dev/threads-api/guide.pdf

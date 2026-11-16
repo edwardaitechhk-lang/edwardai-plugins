@@ -21,6 +21,10 @@ claude plugin marketplace add edwardaitechhk-lang/edwardai-plugins
 | 包 | 安裝 | 用途 |
 |----|------|------|
 | 工作模式三件套 `work-mode` | `/plugin install work-mode@edwardai` | 讓 Claude Code 少問多做、懂得派工、會收尾 |
+| Threads 實作助手 `threads-api` | `/plugin install threads-api@edwardai` | 自己帳號連線、圖解 PDF、預覽、純文字發布及讀回 |
+
+
+[Threads skill、PDF 及下載說明](plugins/threads-api/)
 
 ### 工作模式三件套
 
