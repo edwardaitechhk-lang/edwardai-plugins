@@ -13,7 +13,7 @@
     {
       "name": "threads-api",
       "source": "./plugins/threads-api",
-      "description": "Threads API 圖解實作：自己帳號連線、純文字試發、發布讀回及防重送"
+      "description": "Threads API 圖解實作：自己帳號連線、單篇及多篇串文、逐則讀回與防重送"
     }
   ]
 }

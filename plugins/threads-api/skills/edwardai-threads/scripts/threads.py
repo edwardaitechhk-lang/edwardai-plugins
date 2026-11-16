@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Threads single-text publisher. Credentials stay local; receipts prevent retries."""
+"""Threads text and reply-chain publisher. Private receipts prevent repeat writes."""
 import argparse
 import datetime as dt
 import getpass
@@ -70,34 +70,58 @@ def content(path):
     return value, hashlib.sha256(value.encode()).hexdigest()
 
 
-def verify(config, post_id, expected=None):
-    result = request(config, str(post_id), {'fields': 'id,text,username,permalink,timestamp'})
+def text_digest(text, reply_to_id=None):
+    if reply_to_id is not None:
+        if not re.fullmatch(r'[0-9]+', str(reply_to_id)):
+            raise ValueError('Reply target must be a numeric published post ID')
+        text = json.dumps({'text': text, 'reply_to_id': str(reply_to_id)}, ensure_ascii=False, sort_keys=True)
+    return hashlib.sha256(text.encode()).hexdigest()
+
+
+def verify(config, post_id, expected=None, reply_to_id=None):
+    fields = 'id,text,username,permalink,timestamp'
+    if reply_to_id is not None:
+        fields += ',is_reply,replied_to,root_post'
+    result = request(config, str(post_id), {'fields': fields})
     if result.get('username') != config['expected_username']:
         raise RuntimeError('Published account mismatch')
     if expected is not None and result.get('text') != expected:
         raise RuntimeError('Published text mismatch; inspect existing post, do not resend')
     if not result.get('permalink'):
         raise RuntimeError('Permalink missing; verification incomplete')
+    if reply_to_id is not None:
+        parent = result.get('replied_to')
+        parent_id = parent.get('id') if isinstance(parent, dict) else parent
+        if str(parent_id) != str(reply_to_id) or result.get('is_reply') is not True:
+            raise RuntimeError('Reply relationship unverified; stop before creating another post')
     return result
 
 
-def publish(config, config_path, text, digest, approved):
+def publish(config, config_path, text, digest, approved, reply_to_id=None):
+    if not text or len(text) > 500 or digest != text_digest(text, reply_to_id):
+        raise ValueError('Content or reply target does not match the content hash')
     if digest != approved:
         raise ValueError('Approval hash does not match final text')
     who = identity(config)
+    if reply_to_id is not None:
+        verify(config, str(reply_to_id))  # This tool only chains the user's own posts.
     directory = config_path.parent / 'receipts' / who['username']
     directory.mkdir(parents=True, exist_ok=True, mode=0o700)
     path = directory / (digest + '.json')
     if path.exists():
         state = json.loads(path.read_text())
+        if state.get('reply_to_id') != reply_to_id or state.get('text') != text:
+            raise RuntimeError('Receipt target/content mismatch; inspect before continuing')
         if state.get('post_id'):
-            state['readback'] = verify(config, state['post_id'], text)
+            state['readback'] = verify(config, state['post_id'], text, reply_to_id)
             state['phase'] = 'verified'
             save(path, state)
             return state
         raise RuntimeError('Existing attempt is locked. Read receipt and reconcile; no automatic resend.')
     state = {'username': who['username'], 'text': text, 'sha256': digest,
              'started_at': dt.datetime.now(dt.timezone.utc).isoformat(), 'phase': 'create_attempted'}
+    if reply_to_id is not None:
+        state['reply_to_id'] = reply_to_id
     # O_EXCL coordinates concurrent invocations. A crash leaves a blocking intent.
     fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
     with os.fdopen(fd, 'w') as f:
@@ -105,7 +129,10 @@ def publish(config, config_path, text, digest, approved):
         f.flush()
         os.fsync(f.fileno())
     try:
-        created = request(config, who['id'] + '/threads', {'media_type': 'TEXT', 'text': text}, 'POST')
+        params = {'media_type': 'TEXT', 'text': text}
+        if reply_to_id is not None:
+            params['reply_to_id'] = str(reply_to_id)
+        created = request(config, who['id'] + '/threads', params, 'POST')
         state['container_id'] = created['id']
         state['phase'] = 'container_created'
         save(path, state)
@@ -126,7 +153,7 @@ def publish(config, config_path, text, digest, approved):
         state['post_id'] = result['id']
         state['phase'] = 'published_unverified'
         save(path, state)
-        state['readback'] = verify(config, state['post_id'], text)
+        state['readback'] = verify(config, state['post_id'], text, reply_to_id)
         state['phase'] = 'verified'
         save(path, state)
         return state
@@ -137,14 +164,52 @@ def publish(config, config_path, text, digest, approved):
         raise
 
 
+def thread_content(path):
+    value = json.loads(Path(path).read_text(encoding='utf-8'))
+    posts = value.get('posts') if isinstance(value, dict) else None
+    if not isinstance(posts, list) or not 2 <= len(posts) <= 20:
+        raise ValueError('Thread JSON must have 2-20 posts in a posts array')
+    if any(not isinstance(p, str) or not p.strip() or p != p.strip() or len(p) > 500 for p in posts):
+        raise ValueError('Each post must be a reviewed 1-500 character string without outer whitespace')
+    canonical = json.dumps({'posts': posts}, ensure_ascii=False, sort_keys=True)
+    return posts, hashlib.sha256(canonical.encode()).hexdigest()
+
+
+def publish_thread(config, config_path, posts, digest, approved):
+    canonical = json.dumps({'posts': posts}, ensure_ascii=False, sort_keys=True)
+    if hashlib.sha256(canonical.encode()).hexdigest() != digest or digest != approved:
+        raise ValueError('Thread approval hash does not match the complete ordered text')
+    if not 2 <= len(posts) <= 20 or any(not isinstance(p, str) or not p.strip() or p != p.strip() or len(p) > 500 for p in posts):
+        raise ValueError('Invalid thread text')
+    who = identity(config)
+    path = config_path.parent / 'receipts' / who['username'] / ('thread-' + digest + '.json')
+    state = {'username': who['username'], 'sha256': digest, 'posts': [], 'phase': 'in_progress'}
+    parent = None
+    for index, text in enumerate(posts):
+        part_digest = text_digest(text, parent)
+        part = publish(config, config_path, text, part_digest, part_digest, parent)
+        # publish() reads an existing successful receipt, and locks uncertain attempts.
+        state['posts'].append(part)
+        state['completed'] = index + 1
+        save(path, state)
+        parent = part['post_id']
+    state['phase'] = 'verified'
+    save(path, state)
+    return state
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--config', type=Path, default=DEFAULT)
     sub = parser.add_subparsers(dest='command', required=True)
     sub.add_parser('init')
     sub.add_parser('me')
-    sub.add_parser('preview').add_argument('file')
-    post = sub.add_parser('publish'); post.add_argument('file'); post.add_argument('--approve-hash', required=True)
+    for command in ('preview', 'preview-thread'):
+        preview = sub.add_parser(command); preview.add_argument('file')
+        if command == 'preview': preview.add_argument('--reply-to')
+    for command in ('publish', 'publish-thread'):
+        post = sub.add_parser(command); post.add_argument('file'); post.add_argument('--approve-hash', required=True)
+        if command == 'publish': post.add_argument('--reply-to')
     for command, field in [('verify', 'post_id'), ('status', 'container_id'), ('receipt', 'hash')]:
         sub.add_parser(command).add_argument(field)
     listing = sub.add_parser('list'); listing.add_argument('--pages', type=int, default=1)
@@ -159,10 +224,15 @@ def main():
         config = {'expected_username': username, 'access_token': token}
         result = identity(config)
         save(args.config, config)
-    elif args.command == 'preview':
-        text, digest = content(args.file)
+    elif args.command in ('preview', 'preview-thread'):
         username = json.loads(args.config.read_text()).get('expected_username') if args.config.exists() else '(not connected)'
-        result = {'username': username, 'text': text, 'sha256': digest, 'characters': len(text), 'network_writes': 0}
+        if args.command == 'preview-thread':
+            posts, digest = thread_content(args.file)
+            result = {'username': username, 'posts': posts, 'sha256': digest, 'characters': [len(p) for p in posts], 'reply_order': 'each post replies to its predecessor', 'network_writes': 0}
+        else:
+            text, _ = content(args.file)
+            digest = text_digest(text, args.reply_to)
+            result = {'username': username, 'text': text, 'reply_to_id': args.reply_to, 'sha256': digest, 'characters': len(text), 'network_writes': 0}
     else:
         if os.name != 'nt' and args.config.stat().st_mode & 0o077:
             raise ValueError('Credential file must be private (chmod 600)')
@@ -170,8 +240,12 @@ def main():
         if args.command == 'me':
             result = identity(config)
         elif args.command == 'publish':
-            text, digest = content(args.file)
-            result = publish(config, args.config, text, digest, args.approve_hash)
+            text, _ = content(args.file)
+            digest = text_digest(text, args.reply_to)
+            result = publish(config, args.config, text, digest, args.approve_hash, args.reply_to)
+        elif args.command == 'publish-thread':
+            posts, digest = thread_content(args.file)
+            result = publish_thread(config, args.config, posts, digest, args.approve_hash)
         elif args.command == 'verify':
             result = verify(config, args.post_id)
         elif args.command == 'status':

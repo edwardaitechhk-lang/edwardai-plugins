@@ -1,6 +1,6 @@
 ---
 name: edwardai-threads
-description: 逐步連接使用者自己的 Threads API、核對身份、預覽與發布純文字貼文，並保存收據防止重複發布。適用於 Threads 新手設定、第一篇試發及自己的舊文索引。
+description: 逐步連接使用者自己的 Threads API、核對身份、預覽與發布純文字貼文及接續回覆串，並保存收據防止重複發布。適用於 Threads 新手設定、第一篇試發、多篇串文及自己的舊文索引。
 ---
 
 # EdwardAI Threads 實作助手
@@ -28,10 +28,20 @@ Python 3.9+，無第三方套件。入口 `scripts/threads.py`，所有操作先
 1. `python3 scripts/threads.py init`：在本機互動輸入用戶名稱與 token；私有設定存在使用者自己的家目錄。輸入不回顯。
 2. `python3 scripts/threads.py me`：只讀查詢；返回的 username 必須等於設定中的使用者。
 3. 將最終文字寫入 UTF-8 檔，再執行 `python3 scripts/threads.py preview post.txt`。只輸出預覽和 sha256，不建立貼文容器。
-4. 先展示帳號、全文、圖片／回覆順序（本工具只支援單篇純文字）、發布時間。取得這個版本的明確發布批准，才執行 `python3 scripts/threads.py publish post.txt --approve-hash <預覽的sha256>`。
+4. 先展示帳號、全文、回覆順序及發布時間。本工具支援純文字單篇及逐篇接續回覆，不支援圖片。取得這個版本的明確發布批准，才執行 `python3 scripts/threads.py publish post.txt --approve-hash <預覽的sha256>`。
 5. 完成須有真實 post ID、permalink、帳號與全文讀回。工具保存私有收據；同一帳號同一內容的再次執行只讀回，不再次發布。
 
 工具內的 hash 檢查不是使用者批准的替代品。不要在沒有批准時自己計算 hash 然後發布。
+
+## 多篇串文及指定回覆
+
+- 把每則定稿依序放在 UTF-8 JSON 的 `posts` 陣列，例如 `{"posts":["主文全文","第二則全文","第三則全文"]}`。每則 1–500 字元，先完成整組審稿，不在發布途中生成新內容。
+- `python3 scripts/threads.py preview-thread thread.json` 只輸出全文、字數、順序及整組 sha256，不寫入 Threads。
+- 使用者批准帳號、整組全文及順序後，執行 `python3 scripts/threads.py publish-thread thread.json --approve-hash <整組sha256>`。
+- 第一則是主文，第二則以第一則真實 Post ID 作 `reply_to_id`，第三則接第二則；不是引用貼文，也不是用容器 ID 串接。每則發布及讀回成功後才建立下一則。
+- 工具核對每則帳號、全文、permalink，以及回覆的 `is_reply`／`replied_to`。讀回回覆關係可能需要 `threads_read_replies`，按所需範圍取得權限；欠缺讀回證據不能報整組驗收成功。
+- 單獨回覆自己的已發布貼文，使用 `preview post.txt --reply-to <post-id>` 及 `publish post.txt --reply-to <同一post-id> --approve-hash <預覽sha256>`。hash 同時綁定全文和回覆目標。
+- 每則保存私有收據；中斷後重新執行相同已批准整組時，已知成功的貼文只讀回，從未發的下一則接續。結果不明的收據會鎖住，不可刪除收據重新發。整組收據是 `receipts/<username>/thread-<sha256>.json`。
 
 ## 失敗及中斷
 
@@ -39,7 +49,7 @@ Python 3.9+，無第三方套件。入口 `scripts/threads.py`，所有操作先
 
 ## 舊文與排程
 
-使用 `list --pages N` 讀自己的舊文，交代頁數與有沒有後續頁，再在已讀範圍內找指定主題。產生導讀主文＋每篇舊文簡介與原文連結的預覽。不要把全站 keyword search 當成自己的舊文搜尋。本版工具不直接發布多篇回覆串。
+使用 `list --pages N` 讀自己的舊文，交代頁數與有沒有後續頁，再在已讀範圍內找指定主題。產生導讀主文＋每篇舊文簡介與原文連結的預覽。不要把全站 keyword search 當成自己的舊文搜尋。確認定稿後可用多篇串文流程發布。
 
 單次發布讀回後才設定排程。先查現有執行器，確認日期、時區、執行機器及核准內容，保存 job ID、下一次執行與停用方式。真的部署、dry-run 及定時驗收後才說已完成；本包沒有預設排程或自動生成發文權。
 

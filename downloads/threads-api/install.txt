@@ -7,6 +7,7 @@
 5. 開新 AI 對話，用 /edwardai-threads。先從使用者已完成的位置接續，不重做已驗收步驟。
 6. 憑證以本機隱藏輸入保存，不要求貼到聊天；先 me 核對身份，preview 之後等用戶批准才 publish。
 7. Windows 的 python 指令可能是 py -3；若 Python 未安裝，先從 https://www.python.org/downloads/ 安裝。Windows 真機尚待學生實測。
+8. 多篇串文先把全部正文放進 JSON 的 posts 陣列，preview-thread 展示全文與順序；用戶批准後才用 publish-thread 及整組 sha256 發布。已成功部分只讀回，不刪收據重發。
 
 檔案：skill/SKILL.md、skill/scripts/threads.py、install.py。
 下載：https://edwardai-packs.edwardai-tech-hk.workers.dev/threads-api/edwardai-threads.zip
